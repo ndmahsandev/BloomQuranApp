@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { surahs, Surah } from "@/lib/surahs";
+import { Surah } from "@/lib/surahs";
 import { translations, Language } from "@/lib/translations";
 
 interface Ayah {
@@ -17,7 +17,25 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSurah, setSelectedSurah] = useState<Surah | null>(null);
   const [ayahs, setAyahs] = useState<Ayah[]>([]);
+  const [ayahCache, setAyahCache] = useState<Record<number, Ayah[]>>({});
   const [loading, setLoading] = useState(false);
+  const [dbSurahs, setDbSurahs] = useState<Surah[]>([]);
+  const [loadingSurahs, setLoadingSurahs] = useState(true);
+
+  useEffect(() => {
+    fetch('/quranApp/api/surahs')
+      .then(res => res.json())
+      .then(data => {
+        if (!data.error) {
+          setDbSurahs(data);
+        }
+        setLoadingSurahs(false);
+      })
+      .catch(err => {
+        console.error("Database fetch error:", err);
+        setLoadingSurahs(false);
+      });
+  }, []);
 
   // Customization State
   const [fontSize, setFontSize] = useState(48);
@@ -30,23 +48,35 @@ export default function Home() {
   const [playingAyah, setPlayingAyah] = useState<number | null>(null);
 
   useEffect(() => {
-    if (selectedSurah) {
-      setLoading(true);
-      fetch(`https://api.alquran.cloud/v1/surah/${selectedSurah.number}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setAyahs(data.data.ayahs);
-          setLoading(false);
-        })
-        .catch(() => setLoading(false));
-    } else {
+    if (!selectedSurah) {
       if (activeAudio) {
         activeAudio.pause();
         setActiveAudio(null);
         setPlayingAyah(null);
       }
+      return;
     }
-  }, [selectedSurah]);
+
+    const cachedAyahs = ayahCache[selectedSurah.number];
+    if (cachedAyahs) {
+      setAyahs(cachedAyahs);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    fetch(`https://api.alquran.cloud/v1/surah/${selectedSurah.number}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setAyahs(data.data.ayahs);
+        setAyahCache((prev) => ({
+          ...prev,
+          [selectedSurah.number]: data.data.ayahs,
+        }));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [selectedSurah, activeAudio, ayahCache]);
 
   const playAyahAudio = (ayahNumberInSurah: number) => {
     if (!selectedSurah) return;
@@ -57,12 +87,8 @@ export default function Home() {
       activeAudio.src = ""; // Clear source
     }
 
-    // Use Al-Afasy as a highly reliable fallback for ayah-by-ayah
-    // Pattern: https://cdn.islamic.network/quran/audio/128/ar.alafasy/[ayahNumber].mp3
-    // 'ayahNumber' here is the global index (1-6236)
-
-    // We need the global index. For Al-Fatiha, it's the same as ayahNumberInSurah.
-    // However, the 'ayahs' state already contains 'number' which is the global index.
+    // Use reliable external Al-Afasy CDN again so everything works
+    // Pattern: https://cdn.islamic.network/quran/audio/128/ar.alafasy/[globalAyahNumber].mp3
     const ayah = ayahs.find(a => a.numberInSurah === ayahNumberInSurah);
     if (!ayah) return;
 
@@ -70,8 +96,8 @@ export default function Home() {
 
     try {
       const audio = new Audio(audioUrl);
-      audio.onerror = (e) => {
-        console.error("Audio Load Error:", e);
+      audio.onerror = () => {
+        // Silently stop if audio fails to load (e.g. network/CORS/CDN issue)
         setPlayingAyah(null);
       };
 
@@ -80,8 +106,8 @@ export default function Home() {
 
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          console.error("Playback failed:", error);
+        playPromise.catch(() => {
+          // Ignore playback errors in production to keep console clean
           setPlayingAyah(null);
         });
       }
@@ -90,13 +116,13 @@ export default function Home() {
         setPlayingAyah(null);
         setActiveAudio(null);
       };
-    } catch (err) {
-      console.error("Immediate Audio Error:", err);
+    } catch {
+      // Swallow unexpected errors to avoid noisy console logs
       setPlayingAyah(null);
     }
   };
 
-  const filteredSurahs = surahs.filter(
+  const filteredSurahs = dbSurahs.filter(
     (s) =>
       s.englishName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.name.includes(searchQuery) ||
@@ -205,44 +231,53 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredSurahs.map((surah) => (
-              <div
-                key={surah.number}
-                onClick={() => setSelectedSurah(surah)}
-                className="group relative overflow-hidden rounded-3xl border border-white/5 bg-[#081a11] p-6 transition-all hover:border-emerald-500/30 hover:bg-[#0c261a] hover:shadow-2xl hover:shadow-emerald-500/10 cursor-pointer"
-              >
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex h-12 w-12 rotate-45 items-center justify-center rounded-xl bg-white/5 group-hover:bg-emerald-500 text-white transition-all duration-500">
-                    <span className="-rotate-45 text-lg font-bold">{surah.number}</span>
-                  </div>
-                  <span className="font-arabic text-3xl font-bold text-zinc-400 group-hover:text-emerald-400 transition-colors">
-                    {surah.name}
-                  </span>
-                </div>
-                <div>
-                  <h4 className="text-xl font-bold text-white mb-2">{surah.englishName}</h4>
-                  <div className="flex items-center justify-between text-sm text-zinc-500 font-medium tracking-wide uppercase">
-                    <span>{surah.englishNameTranslation}</span>
-                    <span className="flex items-center gap-2">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/50"></span>
-                      {surah.numberOfAyahs} {t.list.verses}
-                    </span>
-                  </div>
-                </div>
-                {/* Large Background Calligraphy Decor */}
-                <div className={`absolute bottom-[-20px] opacity-[0.03] group-hover:opacity-[0.08] transition-opacity duration-700 pointer-events-none ${t.dir === "rtl" ? "left-[-20px]" : "right-[-20px]"}`}>
-                  <span className="font-arabic text-[140px] leading-none select-none">{surah.name}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {filteredSurahs.length === 0 && (
+          {loadingSurahs ? (
             <div className="py-32 text-center">
-              <span className="block text-5xl mb-6">🔍</span>
-              <p className="text-zinc-500 text-xl">{t.list.noResults}</p>
+              <div className="mx-auto h-10 w-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
+              <p className="text-zinc-500 mt-4">{t.modal?.loading || "Connecting to MySQL Database..."}</p>
             </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {filteredSurahs.map((surah) => (
+                  <div
+                    key={surah.number}
+                    onClick={() => setSelectedSurah(surah)}
+                    className="group relative overflow-hidden rounded-3xl border border-white/5 bg-[#081a11] p-6 transition-all hover:border-emerald-500/30 hover:bg-[#0c261a] hover:shadow-2xl hover:shadow-emerald-500/10 cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex h-12 w-12 rotate-45 items-center justify-center rounded-xl bg-white/5 group-hover:bg-emerald-500 text-white transition-all duration-500">
+                        <span className="-rotate-45 text-lg font-bold">{surah.number}</span>
+                      </div>
+                      <span className="font-arabic text-3xl font-bold text-zinc-400 group-hover:text-emerald-400 transition-colors">
+                        {surah.name}
+                      </span>
+                    </div>
+                    <div>
+                      <h4 className="text-xl font-bold text-white mb-2">{surah.englishName}</h4>
+                      <div className="flex items-center justify-between text-sm text-zinc-500 font-medium tracking-wide uppercase">
+                        <span>{surah.englishNameTranslation}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/50"></span>
+                          {surah.numberOfAyahs} {t.list.verses}
+                        </span>
+                      </div>
+                    </div>
+                    {/* Large Background Calligraphy Decor */}
+                    <div className={`absolute bottom-[-20px] opacity-[0.03] group-hover:opacity-[0.08] transition-opacity duration-700 pointer-events-none ${t.dir === "rtl" ? "left-[-20px]" : "right-[-20px]"}`}>
+                      <span className="font-arabic text-[140px] leading-none select-none">{surah.name}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {filteredSurahs.length === 0 && (
+                <div className="py-32 text-center">
+                  <span className="block text-5xl mb-6">🔍</span>
+                  <p className="text-zinc-500 text-xl">{t.list.noResults}</p>
+                </div>
+              )}
+            </>
           )}
         </section>
       </main>
