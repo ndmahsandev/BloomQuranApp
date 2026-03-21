@@ -23,17 +23,25 @@ export const metadata: Metadata = {
   description: "Master Quran recitation with real-time AI feedback and Tajweed detection.",
 };
 
+import { ThemeProvider } from "@/components/theme-provider";
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html className="dark">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${inter.variable} ${amiri.variable} ${notoUrdu.variable} antialiased`}
       >
-        {children}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem={false}
+        >
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

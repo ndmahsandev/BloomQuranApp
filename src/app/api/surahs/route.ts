@@ -19,6 +19,7 @@ export async function GET() {
         `);
 
         // Check if data is already seeded
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const [rows] = await connection.query('SELECT * FROM surahs ORDER BY number ASC') as any[];
 
         if (rows.length === 0) {
@@ -30,6 +31,7 @@ export async function GET() {
                 );
             }
             // Fetch newly inserted rows
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const [newRows] = await connection.query('SELECT * FROM surahs ORDER BY number ASC') as any[];
             connection.release();
             return NextResponse.json(newRows);
@@ -37,8 +39,8 @@ export async function GET() {
 
         connection.release();
         return NextResponse.json(rows);
-    } catch (error: any) {
+    } catch (error) {
         console.error('Error fetching/seeding database:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: (error as Error).message }, { status: 500 });
     }
 }

@@ -16,9 +16,14 @@
 }
 
 :root {
+  --background: #f8fafc;
+  --foreground: #020805;
+  --font-inter: "Inter", sans-serif;
+}
+
+.dark {
   --background: #020805;
   --foreground: #f0fdf4;
-  --font-inter: "Inter", sans-serif;
 }
 
 body {
